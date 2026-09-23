@@ -1,0 +1,6 @@
+{
+  "name": "Color Wars - Chiến Thuật Màu Sắc",
+  "description": "Trò chơi chiến thuật Color Wars với hiệu ứng nổ dây chuyền sống động, đồ họa tinh tế và nhiều chế độ chơi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
