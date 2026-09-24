@@ -568,6 +568,7 @@ async function startServer() {
                   cascadeLevel,
                   explodingCells: wave.explodingCells,
                   projectiles: wave.projectiles,
+                  boardAfterStep: wave.boardAfterStep,
                 });
 
                 await new Promise((r) => setTimeout(r, 450));

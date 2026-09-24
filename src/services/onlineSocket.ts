@@ -27,9 +27,15 @@ class OnlineSocketService {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/ws`;
+    const customWsUrl = (import.meta as any).env.VITE_WS_URL || (import.meta as any).env.VITE_BACKEND_URL;
+    let wsUrl = '';
+    if (customWsUrl) {
+      wsUrl = customWsUrl.endsWith('/api/ws') ? customWsUrl : `${customWsUrl}/api/ws`;
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      wsUrl = `${protocol}//${host}/api/ws`;
+    }
 
     try {
       this.socket = new WebSocket(wsUrl);

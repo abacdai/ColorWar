@@ -186,16 +186,23 @@ export default function App() {
     });
 
     const unsubWave = onlineSocket.on('cascade_wave', async (data) => {
-      const { cascadeLevel: waveLevel, explodingCells, projectiles: waveProj } = data;
+      const {
+        cascadeLevel: waveLevel,
+        explodingCells,
+        projectiles: waveProj,
+        boardAfterStep,
+      } = data;
+
+      setIsProcessingCascade(true);
       setCascadeLevel(waveLevel);
       soundManager.playExplosion(waveLevel);
 
-      // Splitting effect
+      // 1. Splitting effect: expanding disintegrated fragments
       const splitting = new Set<string>(explodingCells.map((c: any) => `${c.row}-${c.col}`));
       setSplittingCellKeys(splitting);
-      setProjectiles(waveProj);
+      setProjectiles(waveProj || []);
 
-      // Animate projectiles
+      // 2. Animate projectiles flying to neighbor cells with smooth cubic easing
       const startTime = performance.now();
       const flightDuration = 240;
 
@@ -221,9 +228,37 @@ export default function App() {
         requestAnimationFrame(animate);
       });
 
+      // 3. Clear splitting circles
       setSplittingCellKeys(new Set());
+
+      // 4. Calculate absorbing target cells for ripple & pulse absorption animation
+      const newAbsorbing: Record<string, string> = {};
+      if (waveProj && Array.isArray(waveProj)) {
+        for (const proj of waveProj) {
+          if (
+            proj.toRow >= 0 &&
+            proj.toRow < (boardAfterStep?.length || 10) &&
+            proj.toCol >= 0 &&
+            proj.toCol < (boardAfterStep?.length || 10)
+          ) {
+            newAbsorbing[`${proj.toRow}-${proj.toCol}`] = proj.color;
+          }
+        }
+      }
+      setAbsorbingCells(newAbsorbing);
+
+      // 5. Update board immediately when projectiles arrive (zero lag / seamless transition)
+      if (boardAfterStep) {
+        setOnlineRoom((prev) => (prev ? { ...prev, board: boardAfterStep } : null));
+      }
+
       setProjectiles([]);
       soundManager.playDotAdd(Math.min(waveLevel, 4));
+
+      // 6. Hold absorption pulse for smooth visual feedback
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      setAbsorbingCells({});
+      setIsProcessingCascade(false);
     });
 
     const unsubLeft = onlineSocket.on('left_room', () => {
