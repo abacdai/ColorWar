@@ -30,7 +30,8 @@ class OnlineSocketService {
     const customWsUrl = (import.meta as any).env.VITE_WS_URL || (import.meta as any).env.VITE_BACKEND_URL;
     let wsUrl = '';
     if (customWsUrl) {
-      wsUrl = customWsUrl.endsWith('/api/ws') ? customWsUrl : `${customWsUrl}/api/ws`;
+      const cleanBase = String(customWsUrl).trim().replace(/\/+$/, '');
+      wsUrl = cleanBase.endsWith('/api/ws') ? cleanBase : `${cleanBase}/api/ws`;
     } else {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;

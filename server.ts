@@ -170,7 +170,8 @@ async function startServer() {
       return;
     }
 
-    const pathname = request.url ? new URL(request.url, 'http://localhost').pathname : '/';
+    const rawPath = request.url ? new URL(request.url, 'http://localhost').pathname : '/';
+    const pathname = rawPath.replace(/\/+/g, '/');
     if (pathname === '/api/ws' || pathname === '/' || pathname === '') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
