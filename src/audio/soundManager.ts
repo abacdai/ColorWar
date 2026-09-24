@@ -7,6 +7,38 @@ class SoundManager {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
 
+  constructor() {
+    if (typeof window !== 'undefined') {
+      const unlockAudio = () => {
+        this.initCtx();
+        if (this.ctx) {
+          if (this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+          // Play a 1-sample silent buffer to unlock iOS audio pipeline
+          try {
+            const buffer = this.ctx.createBuffer(1, 1, 22050);
+            const source = this.ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.ctx.destination);
+            source.start(0);
+          } catch {
+            // ignore
+          }
+        }
+        window.removeEventListener('touchstart', unlockAudio, true);
+        window.removeEventListener('touchend', unlockAudio, true);
+        window.removeEventListener('pointerdown', unlockAudio, true);
+        window.removeEventListener('click', unlockAudio, true);
+      };
+
+      window.addEventListener('touchstart', unlockAudio, { capture: true, passive: true });
+      window.addEventListener('touchend', unlockAudio, { capture: true, passive: true });
+      window.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true });
+      window.addEventListener('click', unlockAudio, { capture: true, passive: true });
+    }
+  }
+
   private initCtx() {
     if (!this.ctx && typeof window !== 'undefined') {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -259,6 +291,66 @@ class SoundManager {
 
       osc.start(now);
       osc.stop(now + 0.12);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Wheel click tick during rapid spin
+  public playWheelTick() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(800 + Math.random() * 200, now);
+      osc.frequency.exponentialRampToValueAtTime(200, now + 0.025);
+
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.025);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Wheel selection fanfare
+  public playWheelWin() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6 arpeggio
+      notes.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime + idx * 0.08;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.05, now + 0.25);
+
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.3);
+      });
     } catch {
       // Ignore
     }

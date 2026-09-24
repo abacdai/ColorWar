@@ -1,14 +1,32 @@
-export type PlayerId = 'p1' | 'p2' | 'p3' | 'p4';
+export type PlayerId =
+  | 'p1'
+  | 'p2'
+  | 'p3'
+  | 'p4'
+  | 'p5'
+  | 'p6'
+  | 'p7'
+  | 'p8'
+  | 'p9'
+  | 'p10';
 
 export type AIDifficulty = 'easy' | 'medium' | 'hard';
 
-export type GameMode = '1p' | '2p' | '3p' | '4p' | 'online';
+export type GameMode = '1p' | '2p' | '3p' | '4p' | 'custom' | 'online';
+
+export interface CustomPlayerConfig {
+  id: PlayerId;
+  name?: string;
+  isAI: boolean;
+  aiDifficulty?: AIDifficulty;
+}
 
 export interface Player {
   id: PlayerId;
   name: string;
   color: string;       // Primary circle color
   lightColor: string;  // Cell background tint
+  boardBgColor?: string; // Board background tint (lighter than primary color)
   borderGlow: string;  // Highlight glow
   isAI: boolean;
   aiDifficulty?: AIDifficulty;
@@ -53,6 +71,8 @@ export interface OnlinePlayer {
   playerId: PlayerId;
   color: string;
   lightColor: string;
+  boardBgColor?: string;
+  borderGlow?: string;
   isHost: boolean;
   isReady: boolean;
 }
@@ -64,6 +84,7 @@ export interface OnlineRoomInfo {
   playerCount: number;
   boardSize: number;
   status: 'waiting' | 'in_game' | 'finished';
+  isPrivate?: boolean;
 }
 
 export interface ChatMessage {
@@ -79,6 +100,7 @@ export interface OnlineRoomState {
   hostId: string;
   boardSize: number;
   maxPlayers: number;
+  isPrivate?: boolean;
   status: 'waiting' | 'placement' | 'playing' | 'gameover';
   players: OnlinePlayer[];
   board: CellData[][];

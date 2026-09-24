@@ -29,34 +29,35 @@ export const CellTile: React.FC<CellTileProps> = ({
   const isOwnedByCurrent = cell.playerId === activePlayer.id;
   const isReadyToExplode = cell.dots === 3 && isOwnedByCurrent;
 
-  // Dot size scales slightly depending on board size
-  const dotSizeClass = size >= 7 ? 'w-2.5 h-2.5' : size === 6 ? 'w-3 h-3' : 'w-3.5 h-3.5';
-  const circleSizeClass = size >= 7 ? 'w-[78%] h-[78%]' : size === 6 ? 'w-[80%] h-[80%]' : 'w-[82%] h-[82%]';
+  // Standard generous dot and circle sizes preserved across all board sizes
+  const dotSizeClass = 'w-2.5 h-2.5 sm:w-3 sm:h-3';
+  const circleSizeClass = 'w-[82%] h-[82%]';
+  const tileRoundedClass = 'rounded-xl sm:rounded-2xl';
 
   // Tile background color:
-  // If occupied, use player's light pastel tint (e.g. #fed5ce for red like screenshot)
-  // If empty, use warm cream #fff2e0
-  const tileBgColor = player ? player.lightColor : '#fff3e2';
+  // If occupied, use player's light pastel tint
+  // If empty, use clean crisp white with subtle warmth
+  const tileBgColor = player ? player.lightColor : '#ffffff';
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={isSplitting}
-      aria-label={`Ô (${cell.row + 1}, ${cell.col + 1}) - ${
-        cell.playerId ? `${player?.name || 'Người chơi'}: ${cell.dots} chấm` : 'Ô trống'
+      aria-label={`Cell (${cell.row + 1}, ${cell.col + 1}) - ${
+        cell.playerId ? `${player?.name || 'Player'}: ${cell.dots} dots` : 'Empty cell'
       }`}
       style={{
         backgroundColor: tileBgColor,
       }}
       className={`
-        relative aspect-square w-full rounded-2xl md:rounded-3xl flex items-center justify-center
+        relative aspect-square w-full ${tileRoundedClass} flex items-center justify-center
         transition-colors duration-300 shadow-xs
         focus:outline-none select-none overflow-hidden
         ${isAbsorbing ? 'animate-absorb z-10' : ''}
         ${isInteractable ? 'cursor-pointer hover:scale-[1.03] active:scale-[0.97]' : 'cursor-default'}
-        ${isPlacementPhase && !cell.playerId ? 'hover:brightness-95 border-2 border-dashed border-neutral-300/80 hover:border-neutral-400' : ''}
-        ${isInteractable && isOwnedByCurrent ? 'ring-2 ring-offset-2 ring-offset-[#fba886]' : ''}
+        ${isPlacementPhase && !cell.playerId ? 'hover:brightness-95' : ''}
+        ${isInteractable && isOwnedByCurrent ? 'ring-2 ring-white ring-offset-2' : ''}
       `}
     >
       {/* Ripple ring on absorbing ("nhập vô") */}

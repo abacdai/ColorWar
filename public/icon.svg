@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff7b88" />
+      <stop offset="100%" stop-color="#ff4759" />
+    </radialGradient>
+    <radialGradient id="cyanGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#56e0ff" />
+      <stop offset="100%" stop-color="#00c0f8" />
+    </radialGradient>
+    <radialGradient id="goldGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffd54f" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </radialGradient>
+    <radialGradient id="greenGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4ade80" />
+      <stop offset="100%" stop-color="#10b981" />
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle (Safe zone compliant) -->
+  <rect width="512" height="512" rx="128" fill="#1f242e" />
+  
+  <!-- Subtle outer ring -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8" />
+
+  <!-- Center 4 Colored Energy Spheres -->
+  <g filter="url(#shadow)">
+    <!-- Red Sphere -->
+    <circle cx="206" cy="206" r="54" fill="url(#bgGrad)" stroke="#ffffff" stroke-width="5" />
+    <circle cx="195" cy="195" r="10" fill="#ffffff" opacity="0.8" />
+
+    <!-- Cyan Sphere -->
+    <circle cx="306" cy="206" r="54" fill="url(#cyanGrad)" stroke="#ffffff" stroke-width="5" />
+    <circle cx="295" cy="195" r="10" fill="#ffffff" opacity="0.8" />
+
+    <!-- Green Sphere -->
+    <circle cx="206" cy="306" r="54" fill="url(#greenGrad)" stroke="#ffffff" stroke-width="5" />
+    <circle cx="195" cy="295" r="10" fill="#ffffff" opacity="0.8" />
+
+    <!-- Gold Sphere -->
+    <circle cx="306" cy="306" r="54" fill="url(#goldGrad)" stroke="#ffffff" stroke-width="5" />
+    <circle cx="295" cy="295" r="10" fill="#ffffff" opacity="0.8" />
+
+    <!-- Center Spark -->
+    <circle cx="256" cy="256" r="18" fill="#ffffff" />
+    <circle cx="256" cy="256" r="28" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.6" />
+  </g>
+</svg>

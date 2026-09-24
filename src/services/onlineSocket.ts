@@ -29,7 +29,7 @@ class OnlineSocketService {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}`;
+    const wsUrl = `${protocol}//${host}/api/ws`;
 
     try {
       this.socket = new WebSocket(wsUrl);
@@ -93,8 +93,8 @@ class OnlineSocketService {
     this.socket.send(JSON.stringify({ action, payload }));
   }
 
-  public createRoom(playerName: string, boardSize: number, maxPlayers: number): void {
-    this.send('create_room', { playerName, boardSize, maxPlayers });
+  public createRoom(playerName: string, boardSize: number, maxPlayers: number, isPrivate = false): void {
+    this.send('create_room', { playerName, boardSize, maxPlayers, isPrivate });
   }
 
   public joinRoom(roomCode: string, playerName: string): void {

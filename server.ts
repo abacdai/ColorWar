@@ -1,25 +1,23 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import {
+import type {
   CellData,
   PlayerId,
   OnlineRoomState,
   OnlineRoomInfo,
   OnlinePlayer,
   ChatMessage,
-  Projectile,
-} from './src/types/game.js';
+} from './src/types/game.ts';
 import {
   createEmptyBoard,
-  cloneBoard,
   isValidMove,
   processOneExplosionWave,
-} from './src/logic/gameLogic.js';
-import { DEFAULT_PLAYERS_CONFIG } from './src/logic/constants.js';
+} from './src/logic/gameLogic.ts';
+import { DEFAULT_PLAYERS_CONFIG, ALL_PLAYER_IDS } from './src/logic/constants.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +26,11 @@ interface ClientSocket extends WebSocket {
   id?: string;
   roomCode?: string;
   isAlive?: boolean;
+  messageCount?: number;
+  lastMessageReset?: number;
+  lastChatTime?: number;
+  createdRoomsCount?: number;
+  createdRoomsReset?: number;
 }
 
 interface ServerRoom {
@@ -35,6 +38,7 @@ interface ServerRoom {
   hostId: string;
   boardSize: number;
   maxPlayers: number;
+  isPrivate?: boolean;
   status: 'waiting' | 'placement' | 'playing' | 'gameover';
   players: (OnlinePlayer & { ws: ClientSocket })[];
   board: CellData[][];
@@ -45,9 +49,21 @@ interface ServerRoom {
   maxCombo: number;
   messages: ChatMessage[];
   isCascading?: boolean;
+  lastActivity: number;
 }
 
 const rooms = new Map<string, ServerRoom>();
+const MAX_GLOBAL_ROOMS = 500;
+
+// Security Helper: Sanitize Strings against XSS, control-char injections & HTML Injection while preserving emojis & unicode
+function sanitizeText(raw: any, maxLength = 120): string {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '') // Strip binary control characters
+    .replace(/[<>{}`\\$%]/g, '') // Strip script, template injection and HTML delimiters
+    .trim()
+    .substring(0, maxLength);
+}
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -64,6 +80,7 @@ function getSanitizedRoomState(room: ServerRoom): OnlineRoomState {
     hostId: room.hostId,
     boardSize: room.boardSize,
     maxPlayers: room.maxPlayers,
+    isPrivate: Boolean(room.isPrivate),
     status: room.status,
     players: room.players.map((p) => ({
       id: p.id,
@@ -71,6 +88,8 @@ function getSanitizedRoomState(room: ServerRoom): OnlineRoomState {
       playerId: p.playerId,
       color: p.color,
       lightColor: p.lightColor,
+      boardBgColor: p.boardBgColor,
+      borderGlow: p.borderGlow,
       isHost: p.isHost,
       isReady: p.isReady,
     })),
@@ -88,7 +107,11 @@ function broadcastToRoom(room: ServerRoom, payload: any) {
   const msg = JSON.stringify(payload);
   room.players.forEach((p) => {
     if (p.ws.readyState === WebSocket.OPEN) {
-      p.ws.send(msg);
+      try {
+        p.ws.send(msg);
+      } catch (err) {
+        console.error('Broadcast error:', err);
+      }
     }
   });
 }
@@ -96,25 +119,81 @@ function broadcastToRoom(room: ServerRoom, payload: any) {
 function getPublicRoomsList(): OnlineRoomInfo[] {
   const list: OnlineRoomInfo[] = [];
   rooms.forEach((r) => {
+    // Only include public rooms in the open lobby list
+    if (r.isPrivate) return;
+
     const host = r.players.find((p) => p.id === r.hostId);
     list.push({
       roomCode: r.roomCode,
-      hostName: host ? host.name : 'Chủ phòng',
+      hostName: host ? host.name : 'Room Host',
       maxPlayers: r.maxPlayers,
       playerCount: r.players.length,
       boardSize: r.boardSize,
       status: r.status === 'waiting' ? 'waiting' : r.status === 'gameover' ? 'finished' : 'in_game',
+      isPrivate: false,
     });
   });
   return list;
 }
 
+// Memory Cleanup: Prune abandoned rooms older than 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  const maxIdleTime = 30 * 60 * 1000;
+  rooms.forEach((room, code) => {
+    if (room.players.length === 0 || now - room.lastActivity > maxIdleTime) {
+      rooms.delete(code);
+    }
+  });
+}, 5 * 60 * 1000);
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  const wss = new WebSocketServer({ server });
 
-  // Heartbeat interval
+  // WebSocket Server with Payload Security Limit (max 32KB per frame)
+  // Use noServer mode so Vite's internal HMR upgrade is never intercepted or broken
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 32 * 1024,
+  });
+
+  server.on('upgrade', (request, socket, head) => {
+    // Ignore Vite HMR WebSocket connections (which use 'vite-hmr' protocol or /@vite paths)
+    const protocol = request.headers['sec-websocket-protocol'];
+    if (
+      protocol === 'vite-hmr' ||
+      request.url?.includes('vite-hmr') ||
+      request.url?.startsWith('/@vite') ||
+      request.url?.startsWith('/@id')
+    ) {
+      return;
+    }
+
+    const pathname = request.url ? new URL(request.url, 'http://localhost').pathname : '/';
+    if (pathname === '/api/ws' || pathname === '/' || pathname === '') {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  // Disable technology stack fingerprinting
+  app.disable('x-powered-by');
+
+  // Security Middleware: Safe HTTP Headers (Compatible with iframes and development)
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+
+  app.use(express.json({ limit: '32kb' }));
+
+  // Heartbeat interval (Drop dead sockets)
   const pingInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
       const client = ws as ClientSocket;
@@ -124,7 +203,7 @@ async function startServer() {
       client.isAlive = false;
       client.ping();
     });
-  }, 30000);
+  }, 25000);
 
   wss.on('close', () => {
     clearInterval(pingInterval);
@@ -133,15 +212,48 @@ async function startServer() {
   wss.on('connection', (ws: ClientSocket) => {
     ws.isAlive = true;
     ws.id = 'usr_' + Math.random().toString(36).substring(2, 9);
+    ws.messageCount = 0;
+    ws.lastMessageReset = Date.now();
+    ws.lastChatTime = 0;
+    ws.createdRoomsCount = 0;
+    ws.createdRoomsReset = Date.now();
 
     ws.on('pong', () => {
       ws.isAlive = true;
     });
 
     ws.on('message', async (raw) => {
+      // 1. Rate Limiting Protection (Anti-Spam / Anti-Flooding)
+      const now = Date.now();
+      if (!ws.lastMessageReset || now - ws.lastMessageReset > 1000) {
+        ws.messageCount = 0;
+        ws.lastMessageReset = now;
+      }
+      ws.messageCount = (ws.messageCount || 0) + 1;
+      if (ws.messageCount > 25) {
+        // Exceeded 25 actions/second
+        ws.send(JSON.stringify({ type: 'error', message: 'Action rate limit exceeded. Please slow down.' }));
+        return;
+      }
+
       try {
-        const data = JSON.parse(raw.toString());
+        const textData = raw.toString();
+        if (textData.length > 4096) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Payload too large.' }));
+          return;
+        }
+
+        // Prototype Pollution Protection
+        if (textData.includes('__proto__') || textData.includes('constructor') || textData.includes('prototype')) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Malformed payload.' }));
+          return;
+        }
+
+        const data = JSON.parse(textData);
+        if (!data || typeof data !== 'object') return;
+
         const { action, payload } = data;
+        if (!action || typeof action !== 'string') return;
 
         // 1. Get List of Open Rooms
         if (action === 'get_rooms') {
@@ -156,7 +268,32 @@ async function startServer() {
 
         // 2. Create Room
         if (action === 'create_room') {
-          const { playerName = 'Người Chơi', boardSize = 5, maxPlayers = 2 } = payload || {};
+          // Global capacity check to prevent memory exhaustion
+          if (rooms.size >= MAX_GLOBAL_ROOMS) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Server room capacity reached. Please join existing rooms.' }));
+            return;
+          }
+
+          // Per-socket room creation throttle (max 5 rooms per minute)
+          if (!ws.createdRoomsReset || now - ws.createdRoomsReset > 60000) {
+            ws.createdRoomsCount = 0;
+            ws.createdRoomsReset = now;
+          }
+          ws.createdRoomsCount = (ws.createdRoomsCount || 0) + 1;
+          if (ws.createdRoomsCount > 5) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Too many rooms created. Please wait a minute.' }));
+            return;
+          }
+
+          const rawName = payload?.playerName;
+          const rawSize = Number(payload?.boardSize);
+          const rawMax = Number(payload?.maxPlayers);
+          const isPrivate = Boolean(payload?.isPrivate);
+
+          const playerName = sanitizeText(rawName, 18) || 'Player 1';
+          const boardSize = Math.min(Math.max(rawSize || 5, 3), 10);
+          const maxPlayers = Math.min(Math.max(rawMax || 2, 2), 10);
+
           let roomCode = generateRoomCode();
           while (rooms.has(roomCode)) {
             roomCode = generateRoomCode();
@@ -165,10 +302,12 @@ async function startServer() {
           const p1Config = DEFAULT_PLAYERS_CONFIG.p1;
           const hostPlayer: OnlinePlayer & { ws: ClientSocket } = {
             id: ws.id!,
-            name: playerName.trim().substring(0, 16) || 'Người Chơi 1',
+            name: playerName,
             playerId: 'p1',
             color: p1Config.color,
             lightColor: p1Config.lightColor,
+            boardBgColor: p1Config.boardBgColor,
+            borderGlow: p1Config.borderGlow,
             isHost: true,
             isReady: true,
             ws,
@@ -177,11 +316,12 @@ async function startServer() {
           const newRoom: ServerRoom = {
             roomCode,
             hostId: ws.id!,
-            boardSize: Number(boardSize) || 5,
-            maxPlayers: Math.min(Math.max(Number(maxPlayers) || 2, 2), 4),
+            boardSize,
+            maxPlayers,
+            isPrivate,
             status: 'waiting',
             players: [hostPlayer],
-            board: createEmptyBoard(Number(boardSize) || 5),
+            board: createEmptyBoard(boardSize),
             activePlayerIds: ['p1'],
             currentTurnIndex: 0,
             winnerPlayerId: null,
@@ -190,12 +330,13 @@ async function startServer() {
             messages: [
               {
                 id: 'sys_' + Date.now(),
-                senderName: 'Hệ Thống',
+                senderName: 'System',
                 senderColor: '#f97316',
-                text: `Phòng ${roomCode} đã được tạo! Mời bạn bè tham gia.`,
+                text: `Room ${roomCode} (${isPrivate ? 'Private' : 'Public'}) created! Invite friends to join.`,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               },
             ],
+            lastActivity: Date.now(),
           };
 
           rooms.set(roomCode, newRoom);
@@ -214,52 +355,46 @@ async function startServer() {
 
         // 3. Join Room
         if (action === 'join_room') {
-          const { roomCode, playerName = 'Người Chơi' } = payload || {};
-          const normalizedCode = (roomCode || '').toUpperCase().trim();
-          const room = rooms.get(normalizedCode);
+          const rawCode = payload?.roomCode;
+          const rawName = payload?.playerName;
 
+          const normalizedCode = sanitizeText(rawCode, 12).toUpperCase();
+          const playerName = sanitizeText(rawName, 18) || 'Player';
+
+          if (!/^CW-[A-Z0-9]{4}$/.test(normalizedCode)) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid room code format!' }));
+            return;
+          }
+
+          const room = rooms.get(normalizedCode);
           if (!room) {
-            ws.send(
-              JSON.stringify({
-                type: 'error',
-                message: 'Không tìm thấy phòng với mã này!',
-              })
-            );
+            ws.send(JSON.stringify({ type: 'error', message: 'No room found with this code!' }));
             return;
           }
 
           if (room.status !== 'waiting') {
-            ws.send(
-              JSON.stringify({
-                type: 'error',
-                message: 'Trận đấu trong phòng này đã bắt đầu!',
-              })
-            );
+            ws.send(JSON.stringify({ type: 'error', message: 'Match in this room has already started!' }));
             return;
           }
 
           if (room.players.length >= room.maxPlayers) {
-            ws.send(
-              JSON.stringify({
-                type: 'error',
-                message: 'Phòng đã đủ số lượng người chơi!',
-              })
-            );
+            ws.send(JSON.stringify({ type: 'error', message: 'Room is already full!' }));
             return;
           }
 
-          // Assign next playerId
-          const assignedPlayerIds: PlayerId[] = ['p1', 'p2', 'p3', 'p4'];
+          // Assign next available playerId
           const usedPids = new Set(room.players.map((p) => p.playerId));
-          const nextPid = assignedPlayerIds.find((id) => !usedPids.has(id)) || 'p2';
+          const nextPid = ALL_PLAYER_IDS.find((id) => !usedPids.has(id)) || 'p2';
           const cfg = DEFAULT_PLAYERS_CONFIG[nextPid];
 
           const newPlayer: OnlinePlayer & { ws: ClientSocket } = {
             id: ws.id!,
-            name: playerName.trim().substring(0, 16) || `Người Chơi ${room.players.length + 1}`,
+            name: playerName || `Player ${room.players.length + 1}`,
             playerId: nextPid,
             color: cfg.color,
             lightColor: cfg.lightColor,
+            boardBgColor: cfg.boardBgColor,
+            borderGlow: cfg.borderGlow,
             isHost: false,
             isReady: false,
             ws,
@@ -267,17 +402,17 @@ async function startServer() {
 
           room.players.push(newPlayer);
           room.activePlayerIds = room.players.map((p) => p.playerId);
+          room.lastActivity = Date.now();
           ws.roomCode = normalizedCode;
 
           room.messages.push({
             id: 'sys_' + Date.now(),
-            senderName: 'Hệ Thống',
+            senderName: 'System',
             senderColor: '#f97316',
-            text: `${newPlayer.name} đã vào phòng!`,
+            text: `${newPlayer.name} has joined the room!`,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
 
-          // Send confirmation to joining user
           ws.send(
             JSON.stringify({
               type: 'room_joined',
@@ -287,7 +422,6 @@ async function startServer() {
             })
           );
 
-          // Broadcast updated room state to all in room
           broadcastToRoom(room, {
             type: 'room_update',
             room: getSanitizedRoomState(room),
@@ -295,9 +429,10 @@ async function startServer() {
           return;
         }
 
-        // Current client's room
+        // Verify that client belongs to a valid room
         const room = ws.roomCode ? rooms.get(ws.roomCode) : null;
         if (!room) return;
+        room.lastActivity = Date.now();
 
         // 4. Toggle Ready Status
         if (action === 'toggle_ready') {
@@ -315,15 +450,14 @@ async function startServer() {
         // 5. Start Game (Host only)
         if (action === 'start_game') {
           if (room.hostId !== ws.id) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Chỉ chủ phòng mới có thể bắt đầu!' }));
+            ws.send(JSON.stringify({ type: 'error', message: 'Only host can start match!' }));
             return;
           }
           if (room.players.length < 2) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Cần ít nhất 2 người để bắt đầu!' }));
+            ws.send(JSON.stringify({ type: 'error', message: 'Need at least 2 players to start!' }));
             return;
           }
 
-          // Random starting turn
           const randomStartIdx = Math.floor(Math.random() * room.players.length);
           room.status = 'placement';
           room.board = createEmptyBoard(room.boardSize);
@@ -337,9 +471,9 @@ async function startServer() {
           const startingPlayer = room.players[randomStartIdx];
           room.messages.push({
             id: 'sys_' + Date.now(),
-            senderName: 'Hệ Thống',
+            senderName: 'System',
             senderColor: '#f97316',
-            text: `Trận đấu bắt đầu! Lượt đầu tiên thuộc về ${startingPlayer.name}.`,
+            text: `Match started! First turn goes to ${startingPlayer.name}.`,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
 
@@ -350,16 +484,25 @@ async function startServer() {
           return;
         }
 
-        // 6. Make Move (Placement or Playing)
+        // 6. Make Move (Server-authoritative move validation & anti-cheat)
         if (action === 'make_move') {
           if (room.isCascading) return;
-          const { row, col } = payload || {};
 
-          // Check if valid turn
+          const row = Number(payload?.row);
+          const col = Number(payload?.col);
+
+          // Boundary validation
+          if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || row >= room.boardSize || col < 0 || col >= room.boardSize) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Move coordinates out of bounds!' }));
+            return;
+          }
+
           const currentPid = room.activePlayerIds[room.currentTurnIndex];
           const senderPlayer = room.players.find((p) => p.id === ws.id);
+
+          // Anti-Cheat: Verify exact turn
           if (!senderPlayer || senderPlayer.playerId !== currentPid) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Chưa tới lượt của bạn!' }));
+            ws.send(JSON.stringify({ type: 'error', message: 'Not your turn!' }));
             return;
           }
 
@@ -367,7 +510,7 @@ async function startServer() {
           const validation = isValidMove(room.board, row, col, currentPid, currentPhase);
 
           if (!validation.valid) {
-            ws.send(JSON.stringify({ type: 'error', message: validation.reason || 'Nước đi không hợp lệ!' }));
+            ws.send(JSON.stringify({ type: 'error', message: validation.reason || 'Invalid move!' }));
             return;
           }
 
@@ -377,19 +520,17 @@ async function startServer() {
             room.board[row][col].dots = 3;
             room.totalTurns += 1;
 
-            // Check if all players have placed their piece
             if (room.totalTurns >= room.activePlayerIds.length) {
               room.status = 'playing';
               room.messages.push({
                 id: 'sys_' + Date.now(),
-                senderName: 'Hệ Thống',
+                senderName: 'System',
                 senderColor: '#10b981',
-                text: 'Giai đoạn khởi đầu hoàn tất! Bắt đầu kích nổ!',
+                text: 'Placement phase complete! Let the chain reactions begin!',
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               });
             }
 
-            // Advance turn
             room.currentTurnIndex = (room.currentTurnIndex + 1) % room.activePlayerIds.length;
 
             broadcastToRoom(room, {
@@ -405,7 +546,6 @@ async function startServer() {
             room.board[row][col].dots += 1;
             room.totalTurns += 1;
 
-            // Broadcast initial dot add
             broadcastToRoom(room, {
               type: 'room_update',
               room: getSanitizedRoomState(room),
@@ -414,18 +554,15 @@ async function startServer() {
             // If reached 4 dots, process chain reactions wave by wave
             if (room.board[row][col].dots >= 4) {
               let cascadeLevel = 1;
-              const playerColorMap: Record<PlayerId, string> = {
-                p1: DEFAULT_PLAYERS_CONFIG.p1.color,
-                p2: DEFAULT_PLAYERS_CONFIG.p2.color,
-                p3: DEFAULT_PLAYERS_CONFIG.p3.color,
-                p4: DEFAULT_PLAYERS_CONFIG.p4.color,
-              };
+              const playerColorMap = {} as Record<PlayerId, string>;
+              ALL_PLAYER_IDS.forEach((pid) => {
+                playerColorMap[pid] = DEFAULT_PLAYERS_CONFIG[pid].color;
+              });
 
               while (true) {
                 const wave = processOneExplosionWave(room.board, cascadeLevel, playerColorMap);
                 if (!wave) break;
 
-                // Broadcast wave explosion animation
                 broadcastToRoom(room, {
                   type: 'cascade_wave',
                   cascadeLevel,
@@ -433,7 +570,6 @@ async function startServer() {
                   projectiles: wave.projectiles,
                 });
 
-                // Wait for animation delay
                 await new Promise((r) => setTimeout(r, 450));
 
                 room.board = wave.boardAfterStep;
@@ -455,7 +591,10 @@ async function startServer() {
             room.isCascading = false;
 
             // Check tile ownership
-            const tileCounts: Record<PlayerId, number> = { p1: 0, p2: 0, p3: 0, p4: 0 };
+            const tileCounts = {} as Record<PlayerId, number>;
+            ALL_PLAYER_IDS.forEach((pid) => {
+              tileCounts[pid] = 0;
+            });
             const size = room.board.length;
             for (let r = 0; r < size; r++) {
               for (let c = 0; c < size; c++) {
@@ -464,12 +603,11 @@ async function startServer() {
               }
             }
 
-            // Check eliminated players
+            // Check surviving players
             const survivingPids = room.activePlayerIds.filter((pid) => (tileCounts[pid] || 0) > 0);
-
-            // Win condition 1: A player controls 100% of cells
             const totalCells = size * size;
             let winnerId: PlayerId | null = null;
+
             for (const pid of room.activePlayerIds) {
               if (tileCounts[pid] === totalCells) {
                 winnerId = pid;
@@ -477,7 +615,6 @@ async function startServer() {
               }
             }
 
-            // Win condition 2: Only 1 surviving player remains
             if (!winnerId && survivingPids.length === 1 && room.activePlayerIds.length > 1) {
               winnerId = survivingPids[0];
             }
@@ -488,13 +625,13 @@ async function startServer() {
               const winPlayer = room.players.find((p) => p.playerId === winnerId);
               room.messages.push({
                 id: 'sys_' + Date.now(),
-                senderName: 'Hệ Thống',
+                senderName: 'System',
                 senderColor: '#f59e0b',
-                text: `🏆 ${winPlayer ? winPlayer.name : 'Người chơi'} đã giành chiến thắng vang dội!`,
+                text: `🏆 ${winPlayer ? winPlayer.name : 'Player'} has won!`,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               });
             } else {
-              // Advance turn to next surviving player
+              // Advance turn
               let nextIdx = (room.currentTurnIndex + 1) % room.activePlayerIds.length;
               let attempts = 0;
               while (tileCounts[room.activePlayerIds[nextIdx]] === 0 && attempts < room.activePlayerIds.length) {
@@ -526,9 +663,9 @@ async function startServer() {
 
           room.messages.push({
             id: 'sys_' + Date.now(),
-            senderName: 'Hệ Thống',
+            senderName: 'System',
             senderColor: '#f97316',
-            text: 'Trận đấu mới đã bắt đầu!',
+            text: 'A new match has begun!',
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
 
@@ -539,22 +676,33 @@ async function startServer() {
           return;
         }
 
-        // 8. Send Chat Message / Quick Reaction
+        // 8. Send Chat Message (Instant Reaction & XSS Sanitized)
         if (action === 'send_chat') {
-          const { text } = payload || {};
+          const rawText = payload?.text;
           const sender = room.players.find((p) => p.id === ws.id);
-          if (!sender || !text) return;
+          if (!sender) return;
+
+          // Quick chat throttling (max 1 message per 250ms per player for responsive reactions)
+          const chatNow = Date.now();
+          if (ws.lastChatTime && chatNow - ws.lastChatTime < 250) {
+            return;
+          }
+          ws.lastChatTime = chatNow;
+
+          const cleanText = sanitizeText(rawText, 120);
+          if (!cleanText) return;
 
           const chatItem: ChatMessage = {
-            id: 'chat_' + Date.now() + Math.random().toString(36).substring(2, 5),
+            id: 'chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
             senderName: sender.name,
             senderColor: sender.color,
-            text: String(text).substring(0, 100),
+            text: cleanText,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           };
 
           room.messages.push(chatItem);
-          if (room.messages.length > 50) room.messages.shift();
+          if (room.messages.length > 60) room.messages.shift();
+          room.lastActivity = Date.now();
 
           broadcastToRoom(room, {
             type: 'chat_message',
@@ -574,7 +722,6 @@ async function startServer() {
             if (room.players.length === 0) {
               rooms.delete(room.roomCode);
             } else {
-              // Reassign host if host left
               if (room.hostId === ws.id) {
                 room.hostId = room.players[0].id;
                 room.players[0].isHost = true;
@@ -587,9 +734,9 @@ async function startServer() {
 
               room.messages.push({
                 id: 'sys_' + Date.now(),
-                senderName: 'Hệ Thống',
+                senderName: 'System',
                 senderColor: '#ef4444',
-                text: `${leftPlayer.name} đã rời phòng.`,
+                text: `${leftPlayer.name} has left the room.`,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               });
 
@@ -603,7 +750,7 @@ async function startServer() {
           return;
         }
       } catch (err) {
-        console.error('WebSocket message processing error:', err);
+        console.error('WebSocket security catch:', err);
       }
     });
 
@@ -630,9 +777,9 @@ async function startServer() {
 
               room.messages.push({
                 id: 'sys_' + Date.now(),
-                senderName: 'Hệ Thống',
+                senderName: 'System',
                 senderColor: '#ef4444',
-                text: `${leftPlayer.name} đã ngắt kết nối.`,
+                text: `${leftPlayer.name} disconnected.`,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               });
 
@@ -647,9 +794,9 @@ async function startServer() {
     });
   });
 
-  // REST API endpoint to check health
+  // REST API Health Check with Security Protection
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, activeRooms: rooms.size });
+    res.json({ ok: true, activeRooms: rooms.size, timestamp: Date.now() });
   });
 
   // Mount Vite or serve static assets
@@ -660,7 +807,10 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

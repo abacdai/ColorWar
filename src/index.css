@@ -1,8 +1,34 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
+  *, ::before, ::after {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
     font-family: 'Fredoka', 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+
+  .select-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Safari backdrop-filter fallback support */
+  .backdrop-blur-xs { -webkit-backdrop-filter: blur(4px); }
+  .backdrop-blur-sm { -webkit-backdrop-filter: blur(8px); }
+  .backdrop-blur-md { -webkit-backdrop-filter: blur(12px); }
+  .backdrop-blur-lg { -webkit-backdrop-filter: blur(16px); }
+  .backdrop-blur-xl { -webkit-backdrop-filter: blur(24px); }
+  .backdrop-blur-2xl { -webkit-backdrop-filter: blur(40px); }
+
+  /* Smooth momentum scrolling for iOS WebKit */
+  .overflow-y-auto, .overflow-x-auto, .overflow-auto {
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -54,5 +80,212 @@
 
 .animate-split-disperse {
   animation: splitDisperse 0.22s ease-out forwards;
+}
+
+/* ============================================================
+   Custom Soft UI (Neumorphism) + Modern Minimalism + Pastel UI
+   Scrollbars & Range Sliders
+   ============================================================ */
+
+/* Global Scrollbar Customization - Soft UI & Pastel */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #fba886 #141622;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+*::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Neumorphic Sunken Track */
+*::-webkit-scrollbar-track {
+  background: #141622;
+  border-radius: 9999px;
+  margin: 3px;
+  box-shadow: inset 1px 1px 4px rgba(0, 0, 0, 0.65), inset -1px -1px 3px rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Soft Neumorphic Pastel Thumb */
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(145deg, #fed7aa 0%, #fba886 40%, #d8b4fe 100%);
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.4), inset 1px 1px 2px rgba(255, 255, 255, 0.6);
+  transition: all 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(145deg, #ffedd5 0%, #ffb396 40%, #e9d5ff 100%);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.5), 0 0 10px rgba(251, 168, 134, 0.45);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(145deg, #fba886 0%, #c084fc 100%);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.3), 0 0 12px rgba(216, 180, 254, 0.6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox scrollbar with Pastel Lilac */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d8b4fe #141622;
+}
+
+/* Specific helper for elements where scrollbars should be completely hidden */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Dedicated soft pastel pill scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #141622;
+  border-radius: 9999px;
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(145deg, #fed7aa, #d8b4fe);
+  border-radius: 9999px;
+  box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.35);
+}
+
+/* ============================================================
+   Soft UI (Neumorphism) + Modern Minimalism + Pastel UI Sliders
+   ============================================================ */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 24px;
+}
+
+input[type="range"]:focus {
+  outline: none;
+}
+
+/* Sunken / Debossed Neumorphic Track */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 9999px;
+  background: #151724;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.65), inset -1px -1px 3px rgba(255, 255, 255, 0.07);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 10px;
+  border-radius: 9999px;
+  background: #151724;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.65), inset -1px -1px 3px rgba(255, 255, 255, 0.07);
+}
+
+/* Soft Raised Neumorphic Pastel Thumb - Default Pastel Sky / Mint */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -7px; /* (10px track - 24px thumb) / 2 = -7px */
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #e0f2fe 30%, #7dd3fc 75%, #38bdf8 100%);
+  border: 2px solid #ffffff;
+  box-shadow: 3px 4px 9px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(255, 255, 255, 0.25), inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
+  cursor: grab;
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.15);
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.55), -1px -1px 4px rgba(255, 255, 255, 0.4), 0 0 14px rgba(125, 211, 252, 0.5);
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #e0f2fe 30%, #7dd3fc 75%, #38bdf8 100%);
+  border: 2px solid #ffffff;
+  box-shadow: 3px 4px 9px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(255, 255, 255, 0.25), inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: grab;
+}
+
+input[type="range"]:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+
+/* Soft Pastel Lavender Variant (for Players / Custom) */
+input[type="range"].accent-purple-500::-webkit-slider-thumb {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #f3e8ff 25%, #d8b4fe 70%, #c084fc 100%);
+  border: 2px solid #ffffff;
+  box-shadow: 3px 4px 9px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(233, 213, 255, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+}
+input[type="range"].accent-purple-500:active::-webkit-slider-thumb {
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.55), -1px -1px 4px rgba(255, 255, 255, 0.5), 0 0 16px rgba(216, 180, 254, 0.6);
+}
+input[type="range"].accent-purple-500::-moz-range-thumb {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #f3e8ff 25%, #d8b4fe 70%, #c084fc 100%);
+  border: 2px solid #ffffff;
+  box-shadow: 3px 4px 9px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(233, 213, 255, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+/* Soft Pastel Peach / Apricot Variant (for Board Size) */
+input[type="range"].accent-amber-500::-webkit-slider-thumb {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #ffedd5 25%, #fed7aa 65%, #fba886 100%);
+  border: 2px solid #ffffff;
+  box-shadow: 3px 4px 9px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(254, 215, 170, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+}
+input[type="range"].accent-amber-500:active::-webkit-slider-thumb {
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.55), -1px -1px 4px rgba(255, 255, 255, 0.5), 0 0 16px rgba(251, 168, 134, 0.6);
+}
+input[type="range"].accent-amber-500::-moz-range-thumb {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #ffedd5 25%, #fed7aa 65%, #fba886 100%);
+  border: 2px solid #ffffff;
+  box-shadow: 3px 4px 9px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(254, 215, 170, 0.35), inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+/* Soft UI Neumorphic Stepper Button Helper */
+.soft-neumorphic-btn {
+  background: linear-gradient(145deg, #222638, #181b28);
+  box-shadow: 3px 3px 7px rgba(0, 0, 0, 0.5), -2px -2px 5px rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.15s ease;
+}
+.soft-neumorphic-btn:hover:not(:disabled) {
+  background: linear-gradient(145deg, #262a3e, #1c1f2e);
+  box-shadow: 4px 4px 9px rgba(0, 0, 0, 0.55), -2px -2px 6px rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.soft-neumorphic-btn:active:not(:disabled) {
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.65), inset -1px -1px 3px rgba(255, 255, 255, 0.06);
+  transform: scale(0.96);
 }
 
