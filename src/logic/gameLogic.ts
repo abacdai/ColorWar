@@ -52,46 +52,54 @@ export function getOrthogonalNeighbors(
   });
 }
 
-// Validate move: Empty cell or own color cell is valid
+// Validate move
 export function isValidMove(
   board: CellData[][],
   row: number,
   col: number,
   playerId: PlayerId,
-  _phase?: string
+  phase: 'placement' | 'playing'
 ): { valid: boolean; reason?: string } {
   const size = board.length;
   if (row < 0 || row >= size || col < 0 || col >= size) {
-    return { valid: false, reason: 'Out of board bounds!' };
+    return { valid: false, reason: 'Tọa độ ngoài bàn cờ!' };
   }
 
   const cell = board[row][col];
 
-  // Empty cell is valid for placement
-  if (cell.playerId === null) {
+  if (phase === 'placement') {
+    // In placement phase, cell MUST be empty
+    if (cell.playerId !== null) {
+      return { valid: false, reason: 'Giai đoạn đặt cờ: Hãy chọn một ô trống!' };
+    }
     return { valid: true };
   }
 
-  // Must click your own piece if occupied!
+  // In playing phase:
+  // Must click your own piece!
+  if (cell.playerId === null) {
+    return { valid: false, reason: 'Không thể chọn ô trống! Hãy nhấp vào vòng tròn màu của bạn.' };
+  }
+
   if (cell.playerId !== playerId) {
-    return { valid: false, reason: "That is an opponent's circle! Tap an empty square or your own color." };
+    return { valid: false, reason: 'Đây là vòng tròn đối thủ! Hãy nhấp vào màu của bạn.' };
   }
 
   return { valid: true };
 }
 
-// Get list of valid coordinates for a player (empty cells or own cells)
+// Get list of valid coordinates for a player
 export function getValidMoves(
   board: CellData[][],
   playerId: PlayerId,
-  _phase?: string
+  phase: 'placement' | 'playing'
 ): { row: number; col: number }[] {
   const size = board.length;
   const valid: { row: number; col: number }[] = [];
 
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
-      if (isValidMove(board, r, c, playerId).valid) {
+      if (isValidMove(board, r, c, playerId, phase).valid) {
         valid.push({ row: r, col: c });
       }
     }
@@ -105,7 +113,7 @@ export function updatePlayerStats(
   board: CellData[][],
   players: Record<PlayerId, Player>,
   activePlayerIds: PlayerId[],
-  totalTurns: number = 0
+  phase: 'placement' | 'playing'
 ): Record<PlayerId, Player> {
   const updated: Record<PlayerId, Player> = {} as Record<PlayerId, Player>;
 
@@ -129,8 +137,8 @@ export function updatePlayerStats(
     }
   }
 
-  // After all players have taken at least 1 turn: a player with 0 tiles is eliminated!
-  if (totalTurns >= activePlayerIds.length) {
+  // In playing phase: A player with 0 tiles is eliminated!
+  if (phase === 'playing') {
     for (const pid of activePlayerIds) {
       if (updated[pid]) {
         updated[pid].isEliminated = updated[pid].tilesCount === 0;
@@ -146,10 +154,9 @@ export function checkWinner(
   board: CellData[][],
   players: Record<PlayerId, Player>,
   activePlayerIds: PlayerId[],
-  totalTurns: number = 0
+  phase: 'placement' | 'playing'
 ): Player | null {
-  // Do not declare winner in round 1 before everyone has had a chance to place
-  if (totalTurns < activePlayerIds.length) return null;
+  if (phase === 'placement') return null;
 
   const totalBoardCells = board.length * board.length;
   const activePlayers = activePlayerIds.map((id) => players[id]).filter(Boolean);
@@ -310,12 +317,42 @@ export function simulateMoveToEnd(
 export function computeAIMove(
   board: CellData[][],
   aiPlayerId: PlayerId,
-  _phase?: string,
-  difficulty: AIDifficulty = 'medium'
+  phase: 'placement' | 'playing',
+  difficulty: AIDifficulty
 ): { row: number; col: number } | null {
-  const validMoves = getValidMoves(board, aiPlayerId);
+  const validMoves = getValidMoves(board, aiPlayerId, phase);
   if (validMoves.length === 0) return null;
 
+  const size = board.length;
+
+  if (phase === 'placement') {
+    if (difficulty === 'easy') {
+      return validMoves[Math.floor(Math.random() * validMoves.length)];
+    }
+
+    // Medium & Hard: Pick strategic placement
+    const center = (size - 1) / 2;
+    let bestMove = validMoves[0];
+    let bestScore = -Infinity;
+
+    for (const move of validMoves) {
+      const distFromCenter = Math.abs(move.row - center) + Math.abs(move.col - center);
+      const neighbors = getOrthogonalNeighbors(move.row, move.col, size).filter(
+        (n) => n.inBounds
+      );
+      let score = neighbors.length * 3 - distFromCenter;
+      score += Math.random() * 2;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    return bestMove;
+  }
+
+  // Phase: Playing
   if (difficulty === 'easy') {
     return validMoves[Math.floor(Math.random() * validMoves.length)];
   }
